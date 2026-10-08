@@ -1,0 +1,626 @@
+## Step 1 — Create Terraform Project Folder
+Created a new VS Code project folder called `terraform-etl-project`.
+
+Purpose: A Terraform project is a normal folder that contains `.tf` configuration files.
+
+---
+
+## Step 2 — Configure AWS Provider
+Created `providers.tf` and added the AWS provider.
+
+Purpose: The provider tells Terraform which platform it will communicate with. In this project, Terraform will manage AWS resources in `us-east-1`.
+
+Key concept:
+- Provider = platform Terraform connects to.
+
+---
+
+## Step 3 — Create First Terraform Resource
+Created `main.tf` and added an `aws_s3_bucket` resource.
+
+Purpose: A resource block describes infrastructure that Terraform should create or manage.
+
+Key concept:
+- `aws_s3_bucket` = AWS resource type.
+- `etl_bucket` = Terraform's internal name for the resource.
+- `bucket` = actual S3 bucket name.
+
+No AWS resource has been created yet because `terraform apply` has not been run.
+
+---
+
+## Step 4 — Create a Terraform Variable
+Created `variables.tf` and moved the S3 bucket name into a variable.
+
+Purpose: Variables prevent hardcoding and make Terraform configurations reusable between environments such as Dev, Test, and Prod.
+
+Used:
+
+`var.bucket_name`
+
+inside `main.tf` to reference the value defined in `variables.tf`.
+
+Key concept:
+- Variables = reusable configuration values.
+
+Step 5 — Terraform Outputs
+
+Created outputs.tf and added an output for the S3 bucket name.
+
+Purpose: Outputs expose useful information from Terraform resources after Terraform creates or reads the infrastructure.
+
+Example reference:
+
+aws_s3_bucket.etl_bucket.bucket
+
+Breakdown:
+
+aws_s3_bucket = resource type
+
+etl_bucket = Terraform resource name
+
+bucket = attribute being retrieved
+
+Key concept:
+
+Outputs allow Terraform to return important values such as bucket names, IAM role ARNs, database names, and other resource information.
+
+
+## Step 6 — Terraform tfvars File
+
+Created `terraform.tfvars` to store the actual value for the S3 bucket name.
+
+Purpose: Separate Terraform configuration logic from environment-specific values.
+
+`variables.tf` defines the variable:
+
+`variable "bucket_name"`
+
+`terraform.tfvars` provides the value:
+
+`bucket_name = "my-terraform-etl-learning-bucket"`
+
+Key concept:
+- `variables.tf` = defines inputs.
+- `terraform.tfvars` = provides input values.
+- This allows the same Terraform code to be reused for Dev, Test, and Prod environments.
+
+
+## Step 7 — Add AWS Resource Tags
+
+Added tags to the S3 bucket resource.
+
+Purpose: Tags help identify, organize, and manage AWS resources.
+
+Example tags:
+- Environment = dev
+- Project = terraform-etl-project
+- ManagedBy = Terraform
+
+Key concept:
+- Tags are metadata attached to cloud resources.
+- Companies use tags for organization, cost tracking, ownership, governance, and environment management.
+
+## Step 8 — S3 Versioning and Resource Dependencies
+
+Added an `aws_s3_bucket_versioning` resource to enable versioning on the ETL S3 bucket.
+
+Purpose: S3 versioning keeps previous versions of objects and can help recover files that are overwritten or deleted.
+
+Used:
+
+`aws_s3_bucket.etl_bucket.id`
+
+to reference the existing S3 bucket.
+
+Key concepts:
+- Terraform resources can reference other Terraform resources.
+- A resource reference automatically creates an implicit dependency.
+- Terraform understands that the S3 bucket must exist before its versioning configuration can be applied.
+- Terraform automatically determines resource creation order from these dependencies.
+
+## Step 9 — S3 Server-Side Encryption
+
+Added an `aws_s3_bucket_server_side_encryption_configuration` resource.
+
+Purpose: Explicitly configure encryption for objects stored in the ETL S3 bucket.
+
+Used:
+
+`aws_s3_bucket.etl_bucket.id`
+
+to associate the encryption configuration with the existing S3 bucket.
+
+Configured:
+
+`AES256`
+
+which uses Amazon S3-managed server-side encryption.
+
+Key concepts:
+- Encryption protects data stored in S3.
+- Security configuration can be managed as Infrastructure as Code.
+- Terraform resource references automatically create dependencies.
+- Encryption and versioning both depend on the S3 bucket resource.
+
+
+## Step 10 — Block Public Access to S3
+
+Added an `aws_s3_bucket_public_access_block` resource.
+
+Purpose: Prevent the ETL S3 bucket from accidentally becoming publicly accessible.
+
+Configured:
+- Block public ACLs
+- Block public bucket policies
+- Ignore public ACLs
+- Restrict public buckets
+
+Used:
+
+`aws_s3_bucket.etl_bucket.id`
+
+to attach the public access configuration to the existing S3 bucket.
+
+Key concepts:
+- Security settings can be managed with Terraform.
+- Infrastructure as Code helps keep security controls consistent across environments.
+- Multiple Terraform resources can reference and configure the same AWS resource.
+
+
+Step 11 — Create an IAM Role for AWS Glue
+
+Created iam.tf and added an aws_iam_role resource for the future AWS Glue ETL job.
+
+Purpose: An IAM role allows an AWS service such as Glue to temporarily receive permissions to access other AWS resources.
+
+## Step 12 — Give Glue IAM Role Access to S3
+
+Added an `aws_iam_role_policy` resource to give the Glue ETL IAM role permission to access the ETL S3 bucket.
+
+Permissions added:
+- `s3:ListBucket` = list files in the bucket
+- `s3:GetObject` = read files
+- `s3:PutObject` = write files
+
+The policy references both existing Terraform resources:
+
+`aws_iam_role.glue_etl_role.id`
+
+and:
+
+`aws_s3_bucket.etl_bucket.arn`
+
+Used:
+
+`${aws_s3_bucket.etl_bucket.arn}/*`
+
+to reference all objects inside the S3 bucket.
+
+Key concepts:
+- Trust Policy = who can assume the IAM role.
+- Permissions Policy = what the IAM role can do.
+- Least privilege = grant only the permissions required.
+- Terraform can reference multiple resources and automatically determine dependencies.
+- `${...}` can be used for string interpolation.
+
+
+
+## Step 13 — Create AWS Glue ETL Job
+
+Created `glue.tf` and added an `aws_glue_job` resource.
+
+Purpose: Define the AWS Glue job that will eventually execute the ETL transformation.
+
+Configured:
+- Glue job name
+- IAM role
+- Glue runtime version
+- Worker type
+- Number of workers
+- Python/PySpark script location in S3
+
+Connected the Glue job to the IAM role using:
+
+`aws_iam_role.glue_etl_role.arn`
+
+Referenced the S3 bucket dynamically when building the script location:
+
+`s3://${aws_s3_bucket.etl_bucket.bucket}/scripts/orders_etl.py`
+
+Key concepts:
+- `aws_glue_job` defines an AWS Glue ETL job.
+- Glue uses an IAM role to obtain permissions.
+- The Glue job executes a script stored in S3.
+- Terraform resource references create dependencies between infrastructure components.
+- String interpolation can dynamically build paths using Terraform resource attributes.
+
+
+## Step 14 — Create the Glue PySpark ETL Script
+
+Created:
+
+`scripts/orders_etl.py`
+
+Purpose: This Python/PySpark script contains the actual ETL transformation that the AWS Glue job will eventually execute.
+
+Pipeline logic:
+
+`S3 Landing CSV → Glue/PySpark → Transform Data → S3 Curated Parquet`
+
+The script:
+- Reads CSV files from the S3 landing area.
+- Casts quantity and price to appropriate data types.
+- Calculates `total_amount`.
+- Writes transformed data as Parquet into the S3 curated area.
+
+Key concepts:
+- Terraform provisions and configures infrastructure.
+- PySpark performs the actual data transformation.
+- Landing data can be stored as CSV.
+- Curated analytical data can be stored as Parquet.
+- The local Python script still needs to be uploaded to S3 before Glue can use it.
+
+
+## Step 15 — Upload Glue Script to S3
+
+Added an `aws_s3_object` resource to upload the local PySpark script into the ETL S3 bucket.
+
+Local file:
+
+`scripts/orders_etl.py`
+
+S3 destination:
+
+`scripts/orders_etl.py`
+
+Used:
+
+`path.module`
+
+to reference the Terraform project directory.
+
+Used:
+
+`filemd5()`
+
+to calculate a hash of the script so Terraform can detect when the local Python file changes.
+
+Updated the Glue job to reference:
+
+`aws_s3_object.glue_script.key`
+
+Key concepts:
+- `aws_s3_object` manages files stored in S3.
+- Terraform can manage both cloud infrastructure and supporting deployment files.
+- `path.module` references the current Terraform project/module directory.
+- `filemd5()` helps Terraform detect file changes.
+- Resource references create dependencies between the S3 bucket, uploaded script, and Glue job.
+
+## Step 17 — Add Snowflake Terraform Provider
+
+Added the Snowflake provider to `providers.tf`.
+
+Provider:
+
+`snowflakedb/snowflake`
+
+Purpose: Allow the same Terraform project to manage both AWS and Snowflake infrastructure.
+
+The project now uses two providers:
+- AWS Provider = manages AWS infrastructure.
+- Snowflake Provider = manages Snowflake infrastructure.
+
+Added a provider version constraint:
+
+`version = "~> 2.21"`
+
+This controls which Snowflake Terraform provider versions the project can use.
+
+Added an empty:
+
+`provider "snowflake" {}`
+
+Authentication and Snowflake account information will be configured later without hardcoding passwords or private keys.
+
+Key concepts:
+- One Terraform project can use multiple providers.
+- Providers connect Terraform to platforms such as AWS and Snowflake.
+- Providers do not create infrastructure by themselves.
+- Resources are what create and manage infrastructure.
+- Provider version constraints help keep Terraform projects stable and reproducible.
+
+## Step 18 — Create Snowflake Database
+
+Created `snowflake.tf` and added a `snowflake_database` resource.
+
+Database:
+
+`ETL_DEMO_DEV`
+
+Purpose: Create the main Snowflake database that will contain the ETL pipeline's RAW, STAGING, and MART layers.
+
+Terraform resource:
+
+`snowflake_database.etl_database`
+
+Key concepts:
+- `snowflake_database` is the Terraform resource type for a Snowflake database.
+- `etl_database` is Terraform's internal resource name.
+- `ETL_DEMO_DEV` is the actual database name that will exist in Snowflake.
+- Terraform can manage Snowflake infrastructure in the same way it manages AWS infrastructure.
+- Multiple `.tf` files in the same directory are treated as one Terraform configuration.
+
+## Step 19 — Create Snowflake Schemas
+
+Added three `snowflake_schema` resources inside the ETL Snowflake database.
+
+Schemas created:
+- `RAW`
+- `STAGING`
+- `MART`
+
+Purpose:
+- RAW = original ingested data.
+- STAGING = cleaned and transformed intermediate data.
+- MART = business-ready analytical data.
+
+Used:
+
+`snowflake_database.etl_database.name`
+
+to reference the existing Snowflake database.
+
+Key concepts:
+- Snowflake schemas can be managed as Terraform resources.
+- Terraform resources can reference other resources.
+- Referencing the database creates an implicit dependency.
+- Terraform knows the database must exist before the schemas are created.
+- Layered schemas help separate ingestion, transformation, and analytics workloads.
+
+
+## Step 20 — Create Snowflake Warehouse
+
+Added a `snowflake_warehouse` resource.
+
+Warehouse:
+
+`ETL_WH_DEV`
+
+Purpose: Provide Snowflake compute for ETL queries and transformations.
+
+Configured:
+- `warehouse_size = "XSMALL"` for a small development workload.
+- `auto_suspend = 60` to suspend compute after 60 seconds of inactivity.
+- `auto_resume = true` to automatically restart the warehouse when a query needs it.
+
+Key concepts:
+- Database = stores data.
+- Warehouse = provides compute.
+- Snowflake separates storage and compute.
+- Auto-suspend helps reduce unnecessary compute usage and cost.
+- Auto-resume automatically starts the warehouse when work arrives.
+- The warehouse is independent from the database and schemas.
+
+
+
+## Step 21 — Create Snowflake Loader Role
+
+Created `snowflake_rbac.tf` and added a `snowflake_account_role` resource.
+
+Role created:
+
+`ETL_LOADER_ROLE_DEV`
+
+Purpose: This role will eventually be used by the ingestion process to load data into the Snowflake RAW layer.
+
+Key concepts:
+- RBAC = Role-Based Access Control.
+- Permissions are granted to roles instead of directly to users whenever possible.
+- Users or services can then be assigned those roles.
+- Separate roles help enforce least privilege.
+- The loader role will only receive the permissions required for data ingestion.
+- `snowflake_account_role` manages account-level Snowflake roles.
+
+
+## Step 22 — Grant Loader Role Basic Snowflake Access
+
+Added `snowflake_grant_privileges_to_account_role` resources for the ETL loader role.
+
+Granted `USAGE` on:
+- `ETL_DEMO_DEV` database
+- `RAW` schema
+- `ETL_WH_DEV` warehouse
+
+Purpose: Allow the loader role to access the Snowflake objects required for data ingestion.
+
+Key concepts:
+- `USAGE` allows a role to access or use a Snowflake object.
+- A role needs database and schema access before it can work with tables inside the schema.
+- A role needs warehouse `USAGE` to execute SQL using that warehouse.
+- `fully_qualified_name` identifies the schema as `DATABASE.SCHEMA`.
+- Terraform resource references automatically create dependencies between roles, databases, schemas, warehouses, and grants.
+- Least privilege means granting only the permissions required for the role's responsibility.
+
+## Step 23 — Create Snowflake RAW Orders Table
+
+Added a `snowflake_table` resource for:
+
+`ETL_DEMO_DEV.RAW.ORDERS`
+
+Purpose: Store order records ingested from the AWS ETL pipeline into Snowflake.
+
+Columns include:
+- ORDER_ID
+- CUSTOMER_ID
+- PRODUCT_ID
+- QUANTITY
+- UNIT_PRICE
+- TOTAL_AMOUNT
+- SOURCE_FILE
+- LOADED_AT
+
+Used:
+
+`snowflake_database.etl_database.name`
+
+and:
+
+`snowflake_schema.raw.name`
+
+to place the table inside the existing RAW schema.
+
+Key concepts:
+- `snowflake_table` manages a Snowflake table through Terraform.
+- `column` blocks define the table schema.
+- Terraform automatically understands the dependency between database, schema, and table.
+- RAW tables often contain ingestion metadata such as source filename and load timestamp for lineage and troubleshooting.
+
+
+## Step 24 — Grant Loader Role Access to RAW Orders
+
+Added a `snowflake_grant_privileges_to_account_role` resource for the RAW Orders table.
+
+Granted:
+- `SELECT`
+- `INSERT`
+
+to:
+
+`ETL_LOADER_ROLE_DEV`
+
+on:
+
+`ETL_DEMO_DEV.RAW.ORDERS`
+
+Used:
+
+`snowflake_table.raw_orders.fully_qualified_name`
+
+to reference the full Snowflake table name.
+
+Key concepts:
+- Table-level privileges can be managed through Terraform.
+- `INSERT` allows the loader role to load records into the RAW table.
+- `SELECT` allows the role to read the table.
+- `fully_qualified_name` identifies the exact `DATABASE.SCHEMA.TABLE`.
+- Terraform automatically understands dependencies between the role, table, and grant.
+
+
+## Step 25 — Create Snowflake Parquet File Format
+
+Added a `snowflake_file_format_parquet` resource.
+
+File format created:
+
+`ORDERS_PARQUET_FF`
+
+Purpose: Tell Snowflake how to interpret the Parquet files produced by the AWS Glue ETL job.
+
+Configured:
+
+`compression = "AUTO"`
+
+so Snowflake automatically determines the Parquet compression format.
+
+Placed the file format inside:
+
+`ETL_DEMO_DEV.RAW`
+
+using references to the existing database and RAW schema.
+
+Key concepts:
+- A Snowflake file format defines how external files should be interpreted.
+- The Glue job writes curated data as Parquet.
+- The file format describes the file type but does not define where the files are stored.
+- An external stage will later define the S3 location.
+- Terraform resource references automatically create dependencies.
+
+
+## Step 26 — Create AWS/Snowflake Storage Integration
+
+Created an AWS IAM role for Snowflake and a Snowflake AWS storage integration.
+
+AWS role:
+
+`terraform-snowflake-storage-role`
+
+Snowflake integration:
+
+`ETL_S3_INTEGRATION_DEV`
+
+Purpose: Allow Snowflake to securely access transformed Parquet files stored in the S3 curated area.
+
+The integration references the AWS role using:
+
+`aws_iam_role.snowflake_storage_role.arn`
+
+Allowed S3 location:
+
+`s3://<etl-bucket>/curated/`
+
+Key concepts:
+- A Snowflake Storage Integration securely connects Snowflake to cloud storage.
+- AWS access keys do not need to be hardcoded into Snowflake stages.
+- Snowflake assumes an AWS IAM role to access S3.
+- `storage_allowed_locations` limits which S3 locations Snowflake can access.
+- Least privilege means Snowflake receives access only to the curated data it needs.
+- AWS and Snowflake require a trust handshake using a Snowflake-generated IAM user ARN and external ID.
+- Terraform can manage infrastructure dependencies across multiple cloud platforms.
+
+## Step 27 — Give Snowflake IAM Role S3 Read Access
+
+Added an `aws_iam_role_policy` resource for the Snowflake storage IAM role.
+
+Purpose: Allow Snowflake to read transformed Parquet files from the S3 curated area.
+
+Permissions added:
+- `s3:GetBucketLocation`
+- `s3:ListBucket`
+- `s3:GetObject`
+- `s3:GetObjectVersion`
+
+Access is limited to:
+
+`curated/`
+
+and:
+
+`curated/*`
+
+The policy references:
+- `aws_iam_role.snowflake_storage_role.id`
+- `aws_s3_bucket.etl_bucket.arn`
+
+Key concepts:
+- Snowflake needs AWS IAM permissions in addition to the Snowflake storage integration.
+- Bucket permissions and object permissions use different S3 ARNs.
+- The IAM policy follows least privilege by allowing access only to the curated data area.
+- Terraform resource references create dependencies between the IAM role, S3 bucket, and policy.
+
+
+## Step 28 — Create Snowflake External S3 Stage
+
+Added a `snowflake_stage_external_s3` resource.
+
+Stage created:
+
+`ORDERS_S3_STAGE`
+
+Purpose: Point Snowflake to the curated order Parquet files stored in AWS S3.
+
+S3 location:
+
+`s3://<etl-bucket>/curated/orders/`
+
+The stage uses:
+- Snowflake Storage Integration for secure AWS authentication.
+- Parquet File Format to interpret the files.
+- RAW schema as the location of the stage.
+
+Key concepts:
+- An external stage points Snowflake to files stored outside Snowflake.
+- The stage defines where the files are located.
+- The storage integration defines how Snowflake securely accesses AWS.
+- The file format defines how Snowflake interprets the files.
+- Terraform references connect AWS and Snowflake resources and automatically create dependencies.
